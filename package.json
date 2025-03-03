@@ -1,0 +1,12 @@
+{
+  "name": "evm-cli-tool",
+  "version": "1.0.0",
+  "description": "Command line tool for interacting with EVM contract",
+  "main": "evm-cli.js",
+  "scripts": {
+    "start": "node evm-cli.js"
+  },
+  "dependencies": {
+    "ethers": "^5.7.2"
+  }
+}
