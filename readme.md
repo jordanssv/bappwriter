@@ -27,9 +27,39 @@ npm start
 1. The tool will display a list of available contract functions
 2. Select a function by typing its number or name
 3. Enter the required parameters when prompted
-4. Confirm the transaction
-5. The tool will send the transaction and display the transaction hash
-6. It will wait for the transaction to be mined and display the result
+4. The tool will automatically check for required token approvals
+5. Confirm the transaction
+6. Set a manual gas limit if needed
+7. The tool will send the transaction and display the transaction hash
+8. It will wait for the transaction to be mined and display the result
+
+### Additional Options
+The tool includes special functionality beyond contract calls:
+
+1. **Revoke Token Approval**
+   - Allows you to revoke approval for any ERC20 token
+   - Enter the token address when prompted
+   - View the current allowance information
+   - Confirm to revoke (sets allowance to zero)
+   - Option to set custom gas limit for the revocation
+
+2. **View Contract Transactions**
+   - View historical transactions for the contract
+   - Specify how many transactions you want to retrieve
+   - See transaction function names, status, block numbers, timestamps, addresses and hashes
+   - Automatically scans blocks to find contract interactions
+
+### Automatic Token Approvals
+
+When interacting with functions that require ERC20 tokens:
+
+1. The tool automatically detects when token approvals are needed
+2. It checks your current allowance for the token
+3. If insufficient, it prompts you to approve tokens
+4. Options to approve:
+   - Maximum amount (unlimited)
+   - Specific amount
+5. Processes the approval transaction before executing the main function
 
 ### Input Format Guidelines
 
@@ -48,7 +78,7 @@ npm start
 
 ### Manual Gas Limit
 
-If the transaction encounters gas estimation issues, the tool will ask if you want to set a manual gas limit:
+If the transaction encounters gas estimation issues, or you want to set specific gas:
 
 1. When prompted, type `y` to set a manual gas limit
 2. Enter a gas limit value (e.g., `500000`)
@@ -81,9 +111,15 @@ Note that Pectra-Devnet-7 may not have a public block explorer, so the transacti
 
 4. **Transaction not found on explorer**: Pectra-Devnet-7 may not have a public explorer, or the explorer may take time to index transactions.
 
+5. **Token approval errors**: If token approvals fail, check:
+   - Token address is correct
+   - You have sufficient balance of the token
+   - The token contract supports the ERC20 standard
+
 ### Permissions
 
 Many functions require specific permissions:
+- `registerBApp`: May require the sender to be the owner of the BApp address
 - Administrative functions: Often restricted to the contract owner
 
 ## Environment Constants
