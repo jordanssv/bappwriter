@@ -1,4 +1,202 @@
-// Helper function to ask questions
+// Helper function to handle token approval revocation
+async function handleRevokeTokenApproval(wallet, contract) {
+  try {
+    const tokenAddress = await question('\nEnter token address to revoke approval: ');
+    
+    if (!ethers.utils.isAddress(tokenAddress)) {
+      console.error('Invalid token address');
+      return;
+    }
+    
+    // Create token contract instance
+    const tokenContract = new ethers.Contract(
+      tokenAddress,
+      [
+        "function allowance(address owner, address spender) view returns (uint256)",
+        "function approve(address spender, uint256 amount) returns (bool)",
+        "function balanceOf(address account) view returns (uint256)",
+        "function decimals() view returns (uint8)",
+        "function symbol() view returns (string)",
+        "function name() view returns (string)"
+      ],
+      wallet
+    );
+    
+    // Get token info
+    let symbol = "Unknown";
+    let name = "Unknown Token";
+    let decimals = 18;
+    try {
+      symbol = await tokenContract.symbol();
+      name = await tokenContract.name();
+      decimals = await tokenContract.decimals();
+      console.log(`\nToken: ${name} (${symbol})`);
+    } catch (error) {
+      console.warn(`Could not retrieve token info: ${error.message}`);
+    }
+    
+    // Get current allowance
+    const allowance = await tokenContract.allowance(wallet.address, contract.address);
+    console.log(`Current allowance: ${ethers.utils.formatUnits(allowance, decimals)} ${symbol}`);
+    
+    if (allowance.isZero()) {
+      console.log('No approval to revoke. Allowance is already 0.');
+      return;
+    }
+    
+    const confirm = await question(`\nDo you want to revoke approval for ${symbol}? (y/n): `);
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('Revocation cancelled.');
+      return;
+    }
+    
+    // Ask about manual gas limit
+    let overrides = {};
+    const useManualGas = await question('Would you like to set a manual gas limit? (y/n): ');
+    if (useManualGas.toLowerCase() === 'y') {
+      const gasLimit = await question('Enter gas limit (e.g., 100000): ');
+      overrides.gasLimit = ethers.BigNumber.from(gasLimit);
+      console.log(`Using manual gas limit: ${gasLimit}`);
+    }
+    
+    // Send revoke transaction (approve with 0 amount)
+    console.log(`Sending revocation transaction...`);
+    const revokeTx = await tokenContract.approve(contract.address, 0, overrides);
+    console.log(`Revocation transaction sent! Hash: ${revokeTx.hash}`);
+    
+    // Wait for the transaction to be mined
+    console.log(`Waiting for transaction to be mined...`);
+    await revokeTx.wait();
+    console.log(`✓ Approval successfully revoked!`);
+    
+  } catch (error) {
+    console.error(`Error revoking approval: ${error.message}`);
+  }
+}
+
+// Helper function to handle showing last contract transactions
+async function handleLastContractTransactions(provider, contract) {
+  try {
+    // Ask for how many transactions to retrieve
+    const txCountInput = await question('\nHow many transactions to retrieve? (default: 10): ');
+    const txCount = txCountInput ? parseInt(txCountInput) : 10;
+    
+    if (isNaN(txCount) || txCount <= 0) {
+      console.error('Invalid number. Using default: 10');
+      txCount = 10;
+    }
+    
+    console.log(`\nFetching last ${txCount} contract transactions...`);
+    
+    // Get current block number
+    const currentBlock = await provider.getBlockNumber();
+    console.log(`Current block: ${currentBlock}`);
+    
+    // Start looking from the latest block
+    let startBlock = currentBlock;
+    const endBlock = Math.max(currentBlock - 5000, 0); // Look back up to 5000 blocks
+    
+    const transactions = [];
+    let blocksScanned = 0;
+    let txFound = 0;
+    
+    // Scan blocks for transactions involving our contract
+    while (startBlock >= endBlock && transactions.length < txCount && blocksScanned < 1000) {
+      try {
+        // Get block with transactions
+        const block = await provider.getBlockWithTransactions(startBlock);
+        blocksScanned++;
+        
+        // Filter transactions involving our contract
+        const contractTxs = block.transactions.filter(tx => 
+          tx.to && tx.to.toLowerCase() === contract.address.toLowerCase()
+        );
+        
+        // Process each transaction
+        for (const tx of contractTxs) {
+          try {
+            // Get transaction receipt
+            const receipt = await provider.getTransactionReceipt(tx.hash);
+            
+            // Try to decode the function call
+            let functionName = 'Unknown Function';
+            try {
+              const decodedData = contract.interface.parseTransaction({ data: tx.data, value: tx.value });
+              functionName = decodedData.name;
+            } catch (error) {
+              // Could not decode function name
+            }
+            
+            transactions.push({
+              function: functionName,
+              status: receipt.status ? 'Success' : 'Failed',
+              block: block.number,
+              from: tx.from,
+              to: tx.to,
+              hash: tx.hash,
+              timestamp: new Date(block.timestamp * 1000).toLocaleString()
+            });
+            
+            txFound++;
+            
+            // Stop if we have enough transactions
+            if (transactions.length >= txCount) break;
+          } catch (error) {
+            console.error(`Error processing transaction: ${error.message}`);
+          }
+        }
+        
+        // Stop if we have enough transactions
+        if (transactions.length >= txCount) break;
+        
+        // Move to previous block
+        startBlock--;
+        
+        // Show progress every 20 blocks
+        if (blocksScanned % 20 === 0) {
+          console.log(`Scanning... (${blocksScanned} blocks, found ${txFound} transactions)`);
+        }
+      } catch (error) {
+        console.error(`Error scanning block ${startBlock}: ${error.message}`);
+        startBlock--;
+      }
+    }
+    
+    if (transactions.length === 0) {
+      console.log(`No transactions found for contract ${contract.address} in the last ${blocksScanned} blocks.`);
+      return;
+    }
+    
+    // Display transactions in a table
+    console.log('\nContract Transactions:');
+    console.log('-'.repeat(150));
+    console.log('| Function'.padEnd(25) + '| Status'.padEnd(11) + '| Block'.padEnd(10) + '| Timestamp'.padEnd(26) + '| From'.padEnd(25) + '| To'.padEnd(25) + '| Hash'.padEnd(30) + '|');
+    console.log('-'.repeat(150));
+    
+    transactions.forEach(tx => {
+      const truncatedFrom = tx.from.slice(0, 8) + '...' + tx.from.slice(-6);
+      const truncatedTo = tx.to.slice(0, 8) + '...' + tx.to.slice(-6);
+      const truncatedHash = tx.hash.slice(0, 8) + '...' + tx.hash.slice(-6);
+      
+      console.log(
+        '| ' + tx.function.slice(0, 22).padEnd(23) + 
+        '| ' + tx.status.padEnd(9) + 
+        '| ' + tx.block.toString().padEnd(8) + 
+        '| ' + tx.timestamp.padEnd(24) + 
+        '| ' + truncatedFrom.padEnd(23) + 
+        '| ' + truncatedTo.padEnd(23) + 
+        '| ' + truncatedHash.padEnd(28) + 
+        '|'
+      );
+    });
+    console.log('-'.repeat(150));
+    
+    console.log(`\nScanned ${blocksScanned} blocks, found ${txFound} transactions, displayed ${transactions.length}.`);
+    
+  } catch (error) {
+    console.error(`Error fetching transactions: ${error.message}`);
+  }
+}// Helper function to ask questions
 function question(query) {
   return new Promise(resolve => rl.question(query, resolve));
 }// evm-cli.js
@@ -303,8 +501,22 @@ async function main() {
       console.log(`${index + 1}. ${func.name}`);
     });
     
+    // Display additional options
+    console.log('\nAdditional Options:');
+    console.log(`${writableFunctions.length + 1}. Revoke token approval`);
+    console.log(`${writableFunctions.length + 2}. View contract transactions`);
+    
     // Get user function selection
-    const selection = await question('\nSelect a function (number or name): ');
+    const selection = await question('\nSelect a function or option (number or name): ');
+    
+    // Handle additional options
+    if (selection === `${writableFunctions.length + 1}` || selection.toLowerCase() === 'revoke token approval') {
+      await handleRevokeTokenApproval(wallet, contract);
+      return;
+    } else if (selection === `${writableFunctions.length + 2}` || selection.toLowerCase() === 'view contract transactions' || selection.toLowerCase() === 'last 10 contract txns') {
+      await handleLastContractTransactions(provider, contract);
+      return;
+    }
     
     // Find the selected function
     let selectedFunction;
