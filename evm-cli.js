@@ -32,6 +32,95 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
+// Helper function to check and handle token approvals
+async function checkAndHandleTokenApproval(wallet, contract, tokenAddress, amount) {
+  // Skip for ETH
+  if (tokenAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || 
+      tokenAddress.toLowerCase() === '0x0000000000000000000000000000000000000000') {
+    return true;
+  }
+  
+  try {
+    // Create token contract instance
+    const tokenContract = new ethers.Contract(
+      tokenAddress,
+      [
+        "function allowance(address owner, address spender) view returns (uint256)",
+        "function approve(address spender, uint256 amount) returns (bool)",
+        "function balanceOf(address account) view returns (uint256)",
+        "function decimals() view returns (uint8)",
+        "function symbol() view returns (string)"
+      ],
+      wallet
+    );
+    
+    // Get token info
+    let symbol = "Unknown";
+    let decimals = 18;
+    try {
+      symbol = await tokenContract.symbol();
+      decimals = await tokenContract.decimals();
+    } catch (error) {
+      console.warn(`Could not retrieve token info: ${error.message}`);
+    }
+    
+    // Get current allowance
+    const allowance = await tokenContract.allowance(wallet.address, contract.address);
+    
+    // Get user's balance
+    const balance = await tokenContract.balanceOf(wallet.address);
+    
+    // Check if allowance is sufficient
+    if (allowance.lt(amount)) {
+      console.log(`\nToken approval required for ${symbol} (${tokenAddress})`);
+      console.log(`Current allowance: ${ethers.utils.formatUnits(allowance, decimals)} ${symbol}`);
+      console.log(`Required amount: ${ethers.utils.formatUnits(amount, decimals)} ${symbol}`);
+      console.log(`Your balance: ${ethers.utils.formatUnits(balance, decimals)} ${symbol}`);
+      
+      // Prompt for approval
+      const shouldApprove = await question("Do you want to approve tokens for this transaction? (y/n): ");
+      
+      if (shouldApprove.toLowerCase() === "y") {
+        // Ask for approval amount
+        const maxApproval = ethers.constants.MaxUint256;
+        const useMaxApproval = await question(`Do you want to approve maximum amount? (y/n, default: y): `);
+        
+        let approvalAmount;
+        if (useMaxApproval.toLowerCase() !== "n") {
+          approvalAmount = maxApproval;
+          console.log(`Setting maximum approval (unlimited)`);
+        } else {
+          const customAmount = await question(`Enter approval amount in ${symbol}: `);
+          approvalAmount = ethers.utils.parseUnits(customAmount, decimals);
+          console.log(`Setting approval for ${customAmount} ${symbol}`);
+        }
+        
+        // Send approval transaction
+        console.log(`Sending approval transaction...`);
+        const approveTx = await tokenContract.approve(contract.address, approvalAmount);
+        console.log(`Approval transaction sent! Hash: ${approveTx.hash}`);
+        
+        // Wait for the approval transaction to be mined
+        console.log(`Waiting for approval transaction to be mined...`);
+        await approveTx.wait();
+        console.log(`Approval transaction confirmed!`);
+        
+        return true;
+      } else {
+        console.log(`Token approval declined. Cannot proceed with the transaction.`);
+        return false;
+      }
+    } else {
+      console.log(`\nToken approval check for ${symbol}: ✓`);
+      console.log(`Current allowance: ${ethers.utils.formatUnits(allowance, decimals)} ${symbol}`);
+      return true;
+    }
+  } catch (error) {
+    console.error(`Error checking token approval: ${error.message}`);
+    return false;
+  }
+}
+
 // Helper function to check if a function is likely to be admin-only
 async function checkPermissions(contract, wallet, selectedFunction) {
   try {
@@ -288,6 +377,33 @@ async function main() {
     if (confirmation.toLowerCase() !== 'y') {
       console.log('Transaction cancelled.');
       return;
+    }
+    
+    // Check for token approvals if this is a token-related function
+    let needsApproval = false;
+    let tokenAddress;
+    let amountToApprove;
+    
+    // Check if this function involves token deposits
+    if (selectedFunction.name === 'depositERC20') {
+      // For depositERC20, token is the second parameter (idx 1) and amount is third (idx 2)
+      if (params.length >= 3) {
+        tokenAddress = params[1];
+        amountToApprove = params[2];
+        needsApproval = true;
+      }
+    }
+    
+    // Add other token-related functions as needed
+    // For example, if there are other functions that require token approval
+    
+    // Handle token approval if needed
+    if (needsApproval) {
+      const approvalSuccess = await checkAndHandleTokenApproval(wallet, contract, tokenAddress, amountToApprove);
+      if (!approvalSuccess) {
+        console.log('Transaction cancelled due to insufficient token approval.');
+        return;
+      }
     }
     
     // Send transaction
