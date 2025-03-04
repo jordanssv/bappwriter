@@ -74,23 +74,121 @@ async function handleRevokeTokenApproval(wallet, contract) {
   }
 }
 
-// Helper function to handle showing last contract transactions
+// Helper function to handle showing contract transactions
 async function handleLastContractTransactions(provider, contract) {
   try {
-    // Ask for how many transactions to retrieve
-    const txCountInput = await question('\nHow many transactions to retrieve? (default: 10): ');
-    const txCount = txCountInput ? parseInt(txCountInput) : 10;
-    
-    if (isNaN(txCount) || txCount <= 0) {
-      console.error('Invalid number. Using default: 10');
-      txCount = 10;
+    // Create data directory for transactions if it doesn't exist
+    const TX_DATA_DIR = path.join(DATA_DIR, 'transactions');
+    if (!fs.existsSync(TX_DATA_DIR)) {
+      fs.mkdirSync(TX_DATA_DIR, { recursive: true });
     }
     
-    console.log(`\nFetching last ${txCount} contract transactions...`);
+    // Transaction database file path
+    const txDbFile = path.join(TX_DATA_DIR, `${contract.address.toLowerCase()}.json`);
     
-    // Get current block number
+    // Load existing transaction database or create new one
+    let txDatabase = { lastScannedBlock: 0, transactions: [] };
+    if (fs.existsSync(txDbFile)) {
+      try {
+        txDatabase = JSON.parse(fs.readFileSync(txDbFile, 'utf8'));
+      } catch (error) {
+        console.warn(`Could not load transaction database: ${error.message}. Creating new database.`);
+      }
+    }
+    
+    // Get current block
     const currentBlock = await provider.getBlockNumber();
-    console.log(`Current block: ${currentBlock}`);
+    
+    // Show submenu for transaction options
+    console.log('\nContract Transaction Options:');
+    console.log('1. Find specific number of transactions');
+    console.log('2. Scan recent blocks (last 100)');
+    console.log('3. Scan specific block range');
+    console.log('4. Scan from last checkpoint');
+    console.log('5. View indexed transactions');
+    console.log('6. Reset database');
+    console.log(`\nCurrent block: ${currentBlock}`);
+    console.log(`Last scanned block: ${txDatabase.lastScannedBlock}`);
+    console.log(`Transactions in database: ${txDatabase.transactions.length}`);
+    
+    const option = await question('\nSelect an option: ');
+    
+    switch (option) {
+      case '1': // Find specific number of transactions
+        const numTx = parseInt(await question('How many transactions to find? (default: 10): ')) || 10;
+        if (isNaN(numTx) || numTx <= 0) {
+          console.error('Invalid number');
+          return;
+        }
+        await findTransactions(provider, contract, numTx, currentBlock);
+        break;
+      case '2': // Scan recent blocks
+        await scanBlocks(provider, contract, currentBlock - 100, currentBlock, txDatabase, txDbFile);
+        break;
+      case '3': // Scan specific range
+        const startBlock = parseInt(await question('Enter start block: '));
+        const endBlock = parseInt(await question('Enter end block: '));
+        if (isNaN(startBlock) || isNaN(endBlock) || startBlock > endBlock) {
+          console.error('Invalid block range');
+          return;
+        }
+        await scanBlocks(provider, contract, startBlock, endBlock, txDatabase, txDbFile);
+        break;
+      case '4': // Scan from last checkpoint
+        if (txDatabase.lastScannedBlock === 0) {
+          console.log('No previous scan found. Starting a new scan of the last 100 blocks.');
+          await scanBlocks(provider, contract, currentBlock - 100, currentBlock, txDatabase, txDbFile);
+        } else {
+          console.log(`Scanning from block ${txDatabase.lastScannedBlock} to ${currentBlock}`);
+          await scanBlocks(provider, contract, txDatabase.lastScannedBlock + 1, currentBlock, txDatabase, txDbFile);
+        }
+        break;
+      case '5': // View indexed transactions
+        await viewIndexedTransactions(txDatabase);
+        break;
+      case '6': // Reset database
+        const confirm = await question('Are you sure you want to reset the transaction database? (y/n): ');
+        if (confirm.toLowerCase() === 'y') {
+          txDatabase = { lastScannedBlock: 0, transactions: [] };
+          fs.writeFileSync(txDbFile, JSON.stringify(txDatabase), 'utf8');
+          console.log('Transaction database reset.');
+        }
+        break;
+      default:
+        console.log('Invalid option');
+    }
+  } catch (error) {
+    console.error(`Error handling transactions: ${error.message}`);
+  }
+}
+
+// Helper function to view indexed transactions from the database
+async function viewIndexedTransactions(txDatabase) {
+  try {
+    const count = parseInt(await question('How many transactions to view? (default: 10): ')) || 10;
+    
+    if (txDatabase.transactions.length === 0) {
+      console.log('No transactions in database. Please scan blocks first.');
+      return;
+    }
+    
+    // Sort transactions by block number in descending order
+    const sortedTx = [...txDatabase.transactions].sort((a, b) => b.block - a.block);
+    
+    // Take requested number of transactions
+    const transactions = sortedTx.slice(0, count);
+    
+    // Display transactions
+    displayTransactions(transactions);
+  } catch (error) {
+    console.error(`Error viewing transactions: ${error.message}`);
+  }
+}
+
+// Helper function to find a specific number of transactions by scanning backward
+async function findTransactions(provider, contract, count, currentBlock) {
+  try {
+    console.log(`\nSearching for the last ${count} transactions...`);
     
     // Start looking from the latest block
     let startBlock = currentBlock;
@@ -99,9 +197,10 @@ async function handleLastContractTransactions(provider, contract) {
     const transactions = [];
     let blocksScanned = 0;
     let txFound = 0;
+    let lastUpdateTime = Date.now();
     
     // Scan blocks for transactions involving our contract
-    while (startBlock >= endBlock && transactions.length < txCount && blocksScanned < 1000) {
+    while (startBlock >= endBlock && transactions.length < count && blocksScanned < 2000) {
       try {
         // Get block with transactions
         const block = await provider.getBlockWithTransactions(startBlock);
@@ -140,62 +239,212 @@ async function handleLastContractTransactions(provider, contract) {
             txFound++;
             
             // Stop if we have enough transactions
-            if (transactions.length >= txCount) break;
+            if (transactions.length >= count) break;
           } catch (error) {
-            console.error(`Error processing transaction: ${error.message}`);
+            console.warn(`Error processing transaction: ${error.message}`);
           }
         }
         
         // Stop if we have enough transactions
-        if (transactions.length >= txCount) break;
+        if (transactions.length >= count) break;
         
         // Move to previous block
         startBlock--;
         
-        // Show progress every 20 blocks
-        if (blocksScanned % 20 === 0) {
-          console.log(`Scanning... (${blocksScanned} blocks, found ${txFound} transactions)`);
+        // Show progress at regular intervals (but not too frequently)
+        const now = Date.now();
+        if (now - lastUpdateTime > 2000) { // Update every 2 seconds
+          lastUpdateTime = now;
+          
+          // Calculate speed and ETA
+          const elapsedSeconds = (now - (lastUpdateTime - 2000)) / 1000;
+          const blocksPerSecond = blocksScanned / elapsedSeconds;
+          const estimatedTotalBlocks = blocksScanned * (count / Math.max(transactions.length, 1));
+          const remainingBlocks = estimatedTotalBlocks - blocksScanned;
+          const etaSeconds = blocksPerSecond > 0 ? Math.floor(remainingBlocks / blocksPerSecond) : 'unknown';
+          
+          console.log(`Scanning... (${blocksScanned} blocks, found ${txFound} transactions, ~${typeof etaSeconds === 'number' ? formatTime(etaSeconds) : etaSeconds} remaining)`);
         }
       } catch (error) {
-        console.error(`Error scanning block ${startBlock}: ${error.message}`);
+        console.warn(`Error scanning block ${startBlock}: ${error.message}`);
         startBlock--;
       }
     }
     
     if (transactions.length === 0) {
-      console.log(`No transactions found for contract ${contract.address} in the last ${blocksScanned} blocks.`);
+      console.log(`No transactions found for contract ${contract.address} in the scanned ${blocksScanned} blocks.`);
       return;
     }
     
-    // Display transactions in a table
-    console.log('\nContract Transactions:');
-    console.log('-'.repeat(150));
-    console.log('| Function'.padEnd(25) + '| Status'.padEnd(11) + '| Block'.padEnd(10) + '| Timestamp'.padEnd(26) + '| From'.padEnd(25) + '| To'.padEnd(25) + '| Hash'.padEnd(30) + '|');
-    console.log('-'.repeat(150));
-    
-    transactions.forEach(tx => {
-      const truncatedFrom = tx.from.slice(0, 8) + '...' + tx.from.slice(-6);
-      const truncatedTo = tx.to.slice(0, 8) + '...' + tx.to.slice(-6);
-      const truncatedHash = tx.hash.slice(0, 8) + '...' + tx.hash.slice(-6);
-      
-      console.log(
-        '| ' + tx.function.slice(0, 22).padEnd(23) + 
-        '| ' + tx.status.padEnd(9) + 
-        '| ' + tx.block.toString().padEnd(8) + 
-        '| ' + tx.timestamp.padEnd(24) + 
-        '| ' + truncatedFrom.padEnd(23) + 
-        '| ' + truncatedTo.padEnd(23) + 
-        '| ' + truncatedHash.padEnd(28) + 
-        '|'
-      );
-    });
-    console.log('-'.repeat(150));
+    // Display transactions
+    displayTransactions(transactions);
     
     console.log(`\nScanned ${blocksScanned} blocks, found ${txFound} transactions, displayed ${transactions.length}.`);
     
   } catch (error) {
-    console.error(`Error fetching transactions: ${error.message}`);
+    console.error(`Error finding transactions: ${error.message}`);
   }
+}
+
+// Helper function to scan blocks and update database
+async function scanBlocks(provider, contract, startBlock, endBlock, txDatabase, txDbFile) {
+  try {
+    console.log(`\nScanning blocks ${startBlock} to ${endBlock}...`);
+    
+    // This is for progress tracking
+    const totalBlocks = endBlock - startBlock + 1;
+    let blocksScanned = 0;
+    let newTxFound = 0;
+    let startTime = Date.now();
+    
+    // Set up batch settings
+    const BATCH_SIZE = 25; // Number of blocks to process in parallel
+    const SAVE_INTERVAL = 100; // Save database every 100 blocks
+    
+    // Process blocks in batches to improve performance
+    for (let batchStart = startBlock; batchStart <= endBlock; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE - 1, endBlock);
+      
+      // Create batch of promises to get blocks with transactions
+      const blockPromises = [];
+      for (let blockNum = batchStart; blockNum <= batchEnd; blockNum++) {
+        blockPromises.push(provider.getBlockWithTransactions(blockNum).catch(error => {
+          console.warn(`Error fetching block ${blockNum}: ${error.message}`);
+          return null;
+        }));
+      }
+      
+      // Wait for all blocks in batch
+      const blocks = await Promise.all(blockPromises);
+      
+      // Process valid blocks
+      for (const block of blocks) {
+        if (!block) continue;
+        
+        blocksScanned++;
+        
+        // Filter transactions involving our contract
+        const contractTxs = block.transactions.filter(tx => 
+          tx.to && tx.to.toLowerCase() === contract.address.toLowerCase()
+        );
+        
+        // Process each transaction
+        for (const tx of contractTxs) {
+          try {
+            // Get transaction receipt
+            const receipt = await provider.getTransactionReceipt(tx.hash);
+            
+            // Try to decode the function call
+            let functionName = 'Unknown Function';
+            try {
+              const decodedData = contract.interface.parseTransaction({ data: tx.data, value: tx.value });
+              functionName = decodedData.name;
+            } catch (error) {
+              // Could not decode function name
+            }
+            
+            // Create transaction object
+            const txObj = {
+              hash: tx.hash,
+              function: functionName,
+              status: receipt.status ? 'Success' : 'Failed',
+              block: block.number,
+              from: tx.from,
+              to: tx.to,
+              timestamp: new Date(block.timestamp * 1000).toLocaleString()
+            };
+            
+            // Check if transaction already exists
+            const exists = txDatabase.transactions.some(t => t.hash === tx.hash);
+            if (!exists) {
+              txDatabase.transactions.push(txObj);
+              newTxFound++;
+            }
+          } catch (error) {
+            console.warn(`Error processing transaction: ${error.message}`);
+          }
+        }
+        
+        // Update last scanned block if higher than current value
+        if (block.number > txDatabase.lastScannedBlock) {
+          txDatabase.lastScannedBlock = block.number;
+        }
+        
+        // Save database periodically
+        if (blocksScanned % SAVE_INTERVAL === 0) {
+          fs.writeFileSync(txDbFile, JSON.stringify(txDatabase), 'utf8');
+          
+          // Calculate progress and ETA
+          const percentComplete = Math.floor((blocksScanned / totalBlocks) * 100);
+          const elapsedTime = (Date.now() - startTime) / 1000;
+          const blocksPerSecond = blocksScanned / elapsedTime;
+          const remainingBlocks = totalBlocks - blocksScanned;
+          const etaSeconds = blocksPerSecond > 0 ? Math.floor(remainingBlocks / blocksPerSecond) : 'unknown';
+          
+          console.log(`Processed ${blocksScanned}/${totalBlocks} blocks (${percentComplete}%), found ${newTxFound} new transactions. ETA: ${typeof etaSeconds === 'number' ? formatTime(etaSeconds) : etaSeconds}`);
+        }
+      }
+    }
+    
+    // Final save
+    fs.writeFileSync(txDbFile, JSON.stringify(txDatabase), 'utf8');
+    
+    console.log(`\nScan complete! Processed ${blocksScanned} blocks, found ${newTxFound} new transactions.`);
+    console.log(`Total transactions in database: ${txDatabase.transactions.length}`);
+    
+    // Ask if user wants to view transactions
+    const viewTx = await question('\nDo you want to view the latest transactions? (y/n): ');
+    if (viewTx.toLowerCase() === 'y') {
+      await viewIndexedTransactions(txDatabase);
+    }
+    
+  } catch (error) {
+    console.error(`Error scanning blocks: ${error.message}`);
+  }
+}
+
+// Helper function to display transactions in a table
+function displayTransactions(transactions) {
+  if (transactions.length === 0) {
+    console.log('No transactions to display.');
+    return;
+  }
+  
+  console.log('\nContract Transactions:');
+  console.log('-'.repeat(150));
+  console.log('| Function'.padEnd(25) + '| Status'.padEnd(11) + '| Block'.padEnd(10) + '| Timestamp'.padEnd(26) + '| From'.padEnd(25) + '| To'.padEnd(25) + '| Hash'.padEnd(30) + '|');
+  console.log('-'.repeat(150));
+  
+  transactions.forEach(tx => {
+    const truncatedFrom = tx.from.slice(0, 8) + '...' + tx.from.slice(-6);
+    const truncatedTo = tx.to.slice(0, 8) + '...' + tx.to.slice(-6);
+    const truncatedHash = tx.hash.slice(0, 8) + '...' + tx.hash.slice(-6);
+    
+    console.log(
+      '| ' + tx.function.slice(0, 22).padEnd(23) + 
+      '| ' + tx.status.padEnd(9) + 
+      '| ' + tx.block.toString().padEnd(8) + 
+      '| ' + tx.timestamp.padEnd(24) + 
+      '| ' + truncatedFrom.padEnd(23) + 
+      '| ' + truncatedTo.padEnd(23) + 
+      '| ' + truncatedHash.padEnd(28) + 
+      '|'
+    );
+  });
+  console.log('-'.repeat(150));
+}
+
+// Helper function to format time in seconds to human-readable format
+function formatTime(seconds) {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainingSeconds = seconds % 60;
+  
+  return [
+    hours > 0 ? `${hours}h` : '',
+    minutes > 0 ? `${minutes}m` : '',
+    `${remainingSeconds}s`
+  ].filter(Boolean).join(' ');
 }// Helper function to ask questions
 function question(query) {
   return new Promise(resolve => rl.question(query, resolve));
