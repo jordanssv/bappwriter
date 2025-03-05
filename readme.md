@@ -6,8 +6,10 @@ A powerful command line tool for interacting with EVM contracts on Pectra-Devnet
 - [Setup](#setup)
 - [Usage](#usage)
 - [Features](#features)
+  - [Account Management](#account-management)
   - [Token Approval Management](#token-approval-management)
   - [Transaction History](#transaction-history)
+  - [Strategy ID Extraction](#strategy-id-extraction)
 - [Input Guidelines](#input-guidelines)
 - [Transaction Verification](#transaction-verification)
 - [Troubleshooting](#troubleshooting)
@@ -51,37 +53,60 @@ npm start
 
 ## ⭐ Features
 
-### Additional Options Menu
+### Account Management
 
-The tool offers special functions beyond basic contract calls:
+The tool supports multiple Ethereum accounts:
 
-#### Token Approval Management
+- **Switch Between Multiple Accounts** 👤
+  - Create and manage multiple Ethereum addresses
+  - Name your accounts for easy reference
+  - Switch active account with a simple command
+  - Accounts are stored securely in separate files
 
-1. **Revoke Token Approval** ✂️
-   - Allows you to revoke approval for any ERC20 token
-   - Enter the token address when prompted
-   - View the current allowance information
-   - Confirm to revoke (sets allowance to zero)
-   - Option to set custom gas limit for the revocation
+- **Account Operations** 🔑
+  - Create new accounts
+  - Rename existing accounts
+  - Remove accounts
+  - View all accounts with addresses
 
-#### Transaction History
+### Token Approval Management
 
-2. **View Contract Transactions** 🔍
-   - Multiple ways to retrieve and view transaction history:
-     - Find specific number of latest transactions (quick search without indexing)
-     - Scan recent blocks (last 100) for contract activity
-     - Scan specific block ranges for deeper history
-     - Scan from last checkpoint to update transaction index
-     - View previously indexed transactions instantly
-   - Maintains a local transaction database for faster access
-   - Shows transaction details including:
-     - Function names, status, block numbers
-     - Timestamps, from/to addresses, transaction hashes
-   - Performance features:
-     - Parallel block scanning for faster indexing
-     - Progress tracking with estimated completion times
-     - Incremental scanning that only processes new blocks
-   - Database management with reset option when needed
+- **Revoke Token Approval** ✂️
+  - Allows you to revoke approval for any ERC20 token
+  - Enter the token address when prompted
+  - View the current allowance information
+  - Confirm to revoke (sets allowance to zero)
+  - Option to set custom gas limit for the revocation
+
+### Transaction History
+
+- **View Contract Transactions** 🔍
+  - Multiple ways to retrieve and view transaction history:
+    - Find specific number of latest transactions
+    - Scan recent blocks (last 100) for contract activity
+    - Scan specific block ranges for deeper history
+    - Scan from last checkpoint to update transaction index
+    - View previously indexed transactions instantly
+  - Maintains a local transaction database for faster access
+  - Shows transaction details including:
+    - Function names, status, block numbers
+    - Timestamps, from/to addresses, transaction hashes
+    - Strategy IDs for createStrategy transactions
+  - Performance features:
+    - Parallel block scanning for faster indexing
+    - Progress tracking with estimated completion times
+    - Incremental scanning that only processes new blocks
+
+### Strategy ID Extraction
+
+- **Automatic Strategy ID Display** 📊
+  - When creating a strategy, the tool automatically:
+    - Extracts the strategy ID from the event logs
+    - Converts it from hex to a decimal number for easier reference
+    - Displays both formats: `Strategy ID: 2 (hex: 0x000...0002)`
+  - In transaction history:
+    - Strategy IDs are displayed in the Details column
+    - Makes it easy to track which strategies you've created
 
 ### Automatic Token Approvals
 
@@ -128,6 +153,7 @@ After a transaction is sent, the tool provides the following verification detail
 | Block number | The block in which the transaction was mined |
 | Gas used | Amount of gas consumed by the transaction |
 | Events | Any events emitted by the contract function |
+| Strategy IDs | For createStrategy transactions |
 
 > **Note**: Pectra-Devnet-7 may not have a public block explorer, so the transaction hash might not be searchable on common explorers. The transaction receipt details shown by the tool can be used to verify success.
 
