@@ -533,8 +533,8 @@ const { ethers } = require('ethers');
 // Environment constants
 const ENV = {
   CONTRACT_ADDRESS: '0x5217C9034048B1Fa9Fb1e300F94fCd7002138Ea5',
-  CHAIN_ID: 7032118028,
-  RPC_URL: 'https://rpc.pectra-devnet-7.ethpandaops.io/',
+  CHAIN_ID: 7072151312,
+  RPC_URL: 'https://rpc.pectra-devnet-6.ethpandaops.io',
 };
 
 // Create directories if they don't exist
