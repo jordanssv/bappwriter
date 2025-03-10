@@ -1,6 +1,6 @@
 # 🔧 EVM CLI Transaction Tool
 
-A powerful command line tool for interacting with EVM contracts on Pectra-Devnet-7.
+A powerful command line tool for interacting with EVM contracts on Pectra-Devnet-6.
 
 ## 📋 Table of Contents
 - [Setup](#setup)
@@ -155,7 +155,7 @@ After a transaction is sent, the tool provides the following verification detail
 | Events | Any events emitted by the contract function |
 | Strategy IDs | For createStrategy transactions |
 
-> **Note**: Pectra-Devnet-7 may not have a public block explorer, so the transaction hash might not be searchable on common explorers. The transaction receipt details shown by the tool can be used to verify success.
+> **Note**: Pectra-Devnet-6 may not have a public block explorer, so the transaction hash might not be searchable on common explorers. The transaction receipt details shown by the tool can be used to verify success.
 
 ---
 
@@ -168,7 +168,7 @@ After a transaction is sent, the tool provides the following verification detail
 | **"Cannot estimate gas"** | Set a manual gas limit when prompted |
 | **"Execution reverted"** | Check permissions, parameters, or contract conditions |
 | **Array format errors** | Ensure arrays are formatted as valid JSON with square brackets |
-| **Transaction not found on explorer** | This is normal for Pectra-Devnet-7; rely on the tool's transaction details instead |
+| **Transaction not found on explorer** | This is normal for Pectra-Devnet-6; rely on the tool's transaction details instead |
 | **Token approval errors** | Verify the token address, your balance, and that the token follows ERC20 standards |
 
 ### Permissions
@@ -185,8 +185,8 @@ The tool uses the following environment constants:
 ```javascript
 const ENV = {
   CONTRACT_ADDRESS: '0x5217C9034048B1Fa9Fb1e300F94fCd7002138Ea5',
-  CHAIN_ID: 7032118028,
-  RPC_URL: 'https://rpc.pectra-devnet-7.ethpandaops.io/',
+  CHAIN_ID: 7072151312,
+  RPC_URL: 'https://rpc.pectra-devnet-6.ethpandaops.io',
 };
 ```
 
