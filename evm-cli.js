@@ -532,9 +532,9 @@ const { ethers } = require('ethers');
 
 // Environment constants
 const ENV = {
-  CONTRACT_ADDRESS: '0x5217C9034048B1Fa9Fb1e300F94fCd7002138Ea5',
-  CHAIN_ID: 7072151312,
-  RPC_URL: 'https://rpc.pectra-devnet-6.ethpandaops.io',
+  CONTRACT_ADDRESS: null, // Will need to be updated when available
+  CHAIN_ID: 560048,
+  RPC_URL: 'https://rpc.hoodi.ethpandaops.io/',
 };
 
 // Create directories if they don't exist
@@ -1670,6 +1670,22 @@ function parseParameter(value, type) {
 async function main() {
   try {
     let continueRunning = true;
+    
+    // Check if contract address is set
+    if (!ENV.CONTRACT_ADDRESS) {
+      console.log('⚠️ CONTRACT ADDRESS NOT SET ⚠️');
+      const contractAddress = await question('Please enter the contract address: ');
+      
+      if (!ethers.utils.isAddress(contractAddress)) {
+        console.error('Invalid Ethereum address format. Please update the ENV.CONTRACT_ADDRESS in the code.');
+        return;
+      }
+      
+      ENV.CONTRACT_ADDRESS = contractAddress;
+      console.log(`Contract address set to: ${ENV.CONTRACT_ADDRESS}`);
+      console.log('Note: This is temporary. To make it permanent, update the ENV.CONTRACT_ADDRESS in the code.');
+      console.log('');
+    }
     
     while (continueRunning) {
       // Get private key from active account
