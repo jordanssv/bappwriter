@@ -1,5 +1,7 @@
 # 🔧 EVM CLI Transaction Tool
 
+![Hoodi Network Logo](./pGysm1742118088.jpg)
+
 A powerful command line tool for interacting with EVM contracts on Hoodi.
 
 ## 📋 Table of Contents
